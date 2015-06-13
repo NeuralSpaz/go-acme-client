@@ -2,9 +2,9 @@ package command_authorize_import
 
 import (
 	"flag"
-	"fmt"
 	"github.com/stbuehler/go-acme-client/requests"
 	"github.com/stbuehler/go-acme-client/storage"
+	"github.com/stbuehler/go-acme-client/types"
 	"github.com/stbuehler/go-acme-client/ui"
 	"github.com/stbuehler/go-acme-client/utils"
 )
@@ -14,7 +14,7 @@ var register_flags = flag.NewFlagSet("register", flag.ExitOnError)
 var storagePath string
 
 func init() {
-	register_flags.StringVar(&storagePath, "storage", "storage.pem", "Storagefile")
+	storage.AddStorageFlags(register_flags)
 	utils.AddLogFlags(register_flags)
 }
 
@@ -26,44 +26,33 @@ func Run(UI ui.UserInterface, args []string) {
 	}
 	url := register_flags.Arg(0)
 
-	st, err := storage.LoadStorageFile(storagePath, UI.PasswordPromptOnce("Enter password: "))
-	if nil != err {
-		utils.Fatalf("Couldn't load the registration: %s", err)
-	}
-
-	if nil == st.RegistrationData {
+	_, reg := storage.OpenStorageFromFlags(UI)
+	if nil == reg {
 		utils.Fatalf("You need to register first")
 	}
 
-	for _, auth := range st.Authorizations {
-		if auth.UrlSelf == url {
-			fmt.Printf("Already imported '%s'", url)
-			return
-		}
+	auth, err := reg.LoadAuthorization(url)
+	if nil != err {
+		utils.Fatalf("Couldn't lookup authorization: %s", err)
+	}
+	if nil != auth {
+		UI.Messagef("Already imported '%s'", url)
+		return
 	}
 
-	auth := requests.Authorization{
-		UrlSelf: url,
+	importedAuth := types.Authorization{
+		Location: url,
 	}
-	if err = auth.Refresh(); nil != err {
-		utils.Fatalf("Couldn't import authorization %s: %s", url, err)
-	}
-
-	if nil == auth.PublicKey {
-		utils.Warningf("Couldn't verify ownership of authentication\n")
-		auth.PublicKey = st.RegistrationKey.GetPublicKey()
-	} else {
-		if !utils.EqualJsonWebKey(*auth.PublicKey, *st.RegistrationKey.GetPublicKey()) {
-			utils.Fatalf("Public key of registration doesn't match our own key")
-		}
+	if err := requests.RefreshAuthorization(&importedAuth); nil != err {
+		utils.Errorf("Couldn't retrieve authorization: %s", err)
 	}
 
-	st.Authorizations = append(st.Authorizations, auth)
-	if err = storage.SaveStorageFile(storagePath, st); nil != err {
-		utils.Fatalf("Couldn't save the new authorization: %s", err)
+	UI.Messagef("Result: %#v", importedAuth)
+
+	auth, err = reg.NewAuthorization(importedAuth)
+	if nil != err {
+		utils.Fatalf("Couldn't store the new authorization for %v: %s", url, err)
 	}
 
-	UI.Message(fmt.Sprintf("Imported authorization %v successfully", url))
-
-	utils.Debugf("Authorizations: %v\n", st.Authorizations)
+	UI.Messagef("Imported authorization %v successfully", url)
 }

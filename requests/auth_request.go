@@ -2,11 +2,12 @@ package requests
 
 import (
 	"fmt"
+	"github.com/stbuehler/go-acme-client/types"
 	"github.com/stbuehler/go-acme-client/utils"
 	"net/http"
 )
 
-func RunSignedRequest(signingKey utils.SigningKey, req *utils.HttpRequest, payloadJson []byte) (*utils.HttpResponse, error) {
+func RunSignedRequest(signingKey types.SigningKey, req *utils.HttpRequest, payloadJson []byte) (*utils.HttpResponse, error) {
 	var nonce string
 	{
 		nonceResp, err := http.Head(req.URL)

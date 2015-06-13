@@ -3,19 +3,17 @@ package requests
 import (
 	"encoding/json"
 	"fmt"
-	jose "github.com/square/go-jose"
+	"github.com/stbuehler/go-acme-client/types"
 	"github.com/stbuehler/go-acme-client/utils"
 )
 
-type rawRegistrationResponse struct {
-	// some "id" ? ignore
-	Key           *jose.JsonWebKey `json:"key,omitempty"`
-	RecoveryToken string           `json:"recoveryToken,omitempty"`
-	Contact       []string         `json:"contact,omitempty"`
-	Agreement     string           `json:"agreement,omitempty"`
+type rawRegistration struct {
+	Contact       []string `json:"contact,omitempty"`
+	Agreement     string   `json:"agreement,omitempty"`
+	RecoveryToken string   `json:"recoveryToken,omitempty"`
 }
 
-func sendRegistration(url string, signingKey utils.SigningKey, payload interface{}, old *Registration) (*Registration, error) {
+func sendRegistration(url string, signingKey types.SigningKey, payload interface{}, old *types.Registration) (*types.Registration, error) {
 	payloadJson, err := json.Marshal(payload)
 	if nil != err {
 		return nil, err
@@ -34,60 +32,46 @@ func sendRegistration(url string, signingKey utils.SigningKey, payload interface
 		return nil, fmt.Errorf("POSTing registration %s to %s failed: %s", string(payloadJson), url, err)
 	}
 
-	var r Registration
-	r.UrlSelf = resp.Location
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("POST %s to %s failed: %s", string(payloadJson), url, resp.Status)
 	}
 
-	var responseReg rawRegistrationResponse
-	err = json.Unmarshal(resp.Body, &responseReg)
+	var registration types.Registration
+	err = json.Unmarshal(resp.Body, &registration)
 	if nil != err {
 		return nil, fmt.Errorf("Failed decoding response from POST %s to %s: %s", string(payloadJson), url, err)
 	}
 
-	r.PublicKey = responseReg.Key
-	r.RecoveryToken = responseReg.RecoveryToken
-	r.Contact = responseReg.Contact
-	r.Agreement = responseReg.Agreement
+	registration.Location = resp.Location
 
-	if !utils.EqualJsonWebKey(*r.PublicKey, *signingKey.GetPublicKey()) {
-		return nil, fmt.Errorf("Returned public key doesn't match the key used to sign the request")
-	}
-
-	r.UrlAuth = resp.Links["next"].URL
-	r.UrlTermsOfService = resp.Links["terms-of-service"].URL
+	registration.LinkAuth = resp.Links["next"].URL
+	registration.LinkTermsOfService = resp.Links["terms-of-service"].URL
 
 	if nil == old {
-		if 0 == len(r.UrlSelf) {
+		if 0 == len(registration.Location) {
 			return nil, fmt.Errorf("Missing Location header in registration response")
 		}
-		if 0 == len(r.UrlAuth) {
+		if 0 == len(registration.LinkAuth) {
 			return nil, fmt.Errorf("Missing Link rel=\"next\" header in registration response")
 		}
 	} else {
-		if 0 == len(r.UrlSelf) {
-			r.UrlSelf = old.UrlSelf
+		if 0 == len(registration.Location) {
+			registration.Location = old.Location
 		}
-		if 0 == len(r.UrlAuth) {
-			r.UrlAuth = old.UrlAuth
+		if 0 == len(registration.LinkAuth) {
+			registration.LinkAuth = old.LinkAuth
 		}
-		if 0 == len(r.UrlTermsOfService) {
-			r.UrlTermsOfService = old.UrlTermsOfService
+		if 0 == len(registration.LinkTermsOfService) {
+			registration.LinkTermsOfService = old.LinkTermsOfService
 		}
 	}
 
-	return &r, nil
-}
-
-type rawNewRegistration struct {
-	Contact []string `json:"contact,omitempty"`
+	return &registration, nil
 }
 
 // should use a unique signing key for each registration!
-func NewRegistration(url string, signingKey utils.SigningKey, contact []string) (*Registration, error) {
-	reg, err := sendRegistration(url, signingKey, rawNewRegistration{
+func NewRegistration(url string, signingKey types.SigningKey, contact []string) (*types.Registration, error) {
+	reg, err := sendRegistration(url, signingKey, rawRegistration{
 		Contact: contact,
 	}, nil)
 	if nil != err {
@@ -96,13 +80,8 @@ func NewRegistration(url string, signingKey utils.SigningKey, contact []string) 
 	return reg, nil
 }
 
-type rawUpdateRegistration struct {
-	Contact   []string `json:"contact,omitempty"`
-	Agreement string   `json:"agreement,omitempty"`
-}
-
-func UpdateRegistration(signingKey utils.SigningKey, registration *Registration) (*Registration, error) {
-	reg, err := sendRegistration(registration.UrlSelf, signingKey, rawUpdateRegistration{
+func UpdateRegistration(signingKey types.SigningKey, registration *types.Registration) (*types.Registration, error) {
+	reg, err := sendRegistration(registration.Location, signingKey, rawRegistration{
 		Contact:   registration.Contact,
 		Agreement: registration.Agreement,
 	}, registration)
@@ -112,8 +91,8 @@ func UpdateRegistration(signingKey utils.SigningKey, registration *Registration)
 	return reg, nil
 }
 
-func FetchRegistration(signingKey utils.SigningKey, registration *Registration) (*Registration, error) {
-	reg, err := sendRegistration(registration.UrlSelf, signingKey, rawUpdateRegistration{}, registration)
+func FetchRegistration(signingKey types.SigningKey, registration *types.Registration) (*types.Registration, error) {
+	reg, err := sendRegistration(registration.Location, signingKey, rawRegistration{}, registration)
 	if nil != err {
 		return nil, err
 	}

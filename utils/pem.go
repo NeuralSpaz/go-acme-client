@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 )
 
+const PemDefaultCipher = x509.PEMCipherAES256
+
 func EncryptPemBlock(block *pem.Block, password string, alg x509.PEMCipher) error {
 	if 0 != len(password) {
 		if x509.PEMCipher(0) == alg {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/stbuehler/go-acme-client/requests"
 	"github.com/stbuehler/go-acme-client/storage"
+	"github.com/stbuehler/go-acme-client/types"
 	"github.com/stbuehler/go-acme-client/ui"
 	"github.com/stbuehler/go-acme-client/utils"
 	"strconv"
@@ -12,152 +13,133 @@ import (
 
 var register_flags = flag.NewFlagSet("register", flag.ExitOnError)
 
-var storagePath string
-
 func init() {
-	register_flags.StringVar(&storagePath, "storage", "storage.pem", "Storagefile")
+	storage.AddStorageFlags(register_flags)
 	utils.AddLogFlags(register_flags)
 }
 
 func Run(UI ui.UserInterface, args []string) {
 	register_flags.Parse(args)
 
-	st, err := storage.LoadStorageFile(storagePath, UI.PasswordPromptOnce("Enter password: "))
-	if nil != err {
-		utils.Fatalf("Couldn't load the registration: %s", err)
-	}
-
-	if nil == st.RegistrationData {
+	_, reg := storage.OpenStorageFromFlags(UI)
+	if nil == reg {
 		utils.Fatalf("You need to register first")
 	}
 
 	if 1 != len(register_flags.Args()) {
+		auths, err := reg.AuthorizationList()
+		if nil != err {
+			utils.Fatalf("Couldn't retrieve list fo authorizations: %s", err)
+		}
 		msg := "The following authorizations are available:\n"
-		for _, auth := range st.Authorizations {
-			msg += fmt.Sprintf("\t%s (%s)\n", auth.DNSIdentifier, auth.UrlSelf)
+		for dnsName, auth := range auths {
+			msg += fmt.Sprintf("\t%s\n", dnsName)
+			for _, info := range auth {
+				if info.Status == types.AuthorizationStatus("valid") && nil != info.Expires {
+					msg += fmt.Sprintf("\t\t%s (%s till %s)\n", info.Location, info.Status, info.Expires)
+				} else {
+					msg += fmt.Sprintf("\t\t%s (%s)\n", info.Location, info.Status)
+				}
+			}
 		}
 		msg += "Provide the domain (or url) you want to work with as command line parameter"
 		UI.Message(msg)
 		return
 	}
-	domain := register_flags.Arg(0)
+	locationOrDnsName := register_flags.Arg(0)
 
-	var auth *requests.Authorization
-	{
-		var found []*requests.Authorization
-		for ndx, auth := range st.Authorizations {
-			if auth.DNSIdentifier == domain || auth.UrlSelf == domain {
-				found = append(found, &st.Authorizations[ndx])
-			}
-		}
-		if 1 == len(found) {
-			auth = found[0]
-		} else if 0 < len(found) {
-			msg := fmt.Sprintf("The following authorizations for domain %s are available:\n", domain)
-			for _, auth := range found {
-				msg += fmt.Sprintf("\t%s\n", auth.UrlSelf)
-			}
-			msg += "Provide the url you want to work with as command line parameter"
-			UI.Message(msg)
-			return
-		}
+	auth, err := reg.LoadAuthorization(locationOrDnsName)
+	if nil != err {
+		utils.Fatalf("Couldn't lookup authorization %v: %v", locationOrDnsName, err)
 	}
 
 	if nil == auth {
-		newAuth, err := requests.NewDNSAuthorization(st.RegistrationData.UrlAuth, st.RegistrationKey, domain)
+		newAuth, err := requests.NewDNSAuthorization(reg.Registration.LinkAuth, reg.SigningKey, locationOrDnsName)
 		if nil != err {
-			utils.Fatalf("Couldn't create authorization for %v: %s", domain, err)
+			utils.Fatalf("Couldn't create authorization for %v: %s", locationOrDnsName, err)
 		}
-		st.Authorizations = append(st.Authorizations, *newAuth)
-		auth = &st.Authorizations[len(st.Authorizations)-1]
+		auth, err = reg.NewAuthorization(*newAuth)
+		if nil != err {
+			utils.Fatalf("Couldn't save the new authorization for %v: %s", locationOrDnsName, err)
+		}
 	} else {
-		if err := auth.Refresh(); nil != err {
+		if err := requests.RefreshAuthorization(&auth.Authorization); nil != err {
 			utils.Errorf("Couldn't update authorization: %s", err)
 		}
-	}
-	if err = storage.SaveStorageFile(storagePath, st); nil != err {
-		utils.Fatalf("Couldn't save the new authorization: %s", err)
-	}
-
-	utils.Debugf("Authorization: %#v", auth)
-
-	msg := fmt.Sprintf("Status: %s\n", auth.Status)
-	if string(auth.Status) == "valid" {
-		msg += fmt.Sprintf("Expires: %s\n", auth.Expires)
-	}
-
-	for ndx, challenge := range auth.Challenges {
-		msg += fmt.Sprintf("Challenge: %d\n", ndx)
-		msg += fmt.Sprintf("\tType: %s\n", challenge.Type)
-		msg += fmt.Sprintf("\tStatus: %s\n", challenge.Status)
-		if 0 != len(challenge.Validated) {
-			msg += fmt.Sprintf("\tValidated: %s\n", challenge.Validated)
-		}
-		if 0 != len(challenge.URI) {
-			msg += fmt.Sprintf("\tURI: %s\n", challenge.URI)
-		}
-		if nil != challenge.Data {
-			fields, err := challenge.Data.MarshalJSONPartial()
-			if nil != err {
-				utils.Fatalf("Failed to serialize challenge data: %s", err)
-			}
-			for field, value := range fields {
-				msg += fmt.Sprintf("\t%s: %v\n", field, value)
-			}
+		if err = auth.Save(); nil != err {
+			utils.Fatalf("Couldn't save the updated authorization: %s", err)
 		}
 	}
-	msg += fmt.Sprintf("Valid combinations: %v", auth.Combinations)
 
-	UI.Message(msg)
+	utils.Debugf("Authorization: %#v", auth.Authorization)
 
 	for {
-		sel, err := UI.Prompt("Enter a challenge number to respond to (or enter nothing to exit)")
+		msg := fmt.Sprintf("Status: %s\n", auth.Authorization.Status)
+		if string(auth.Authorization.Status) == "valid" {
+			msg += fmt.Sprintf("Expires: %s\n", auth.Authorization.Expires)
+		}
+		for ndx, challenge := range auth.Authorization.Challenges {
+			if 0 != len(challenge.Validated) {
+				msg += fmt.Sprintf("Challenge: %d (%s, %s, validated on %s)\n", ndx, challenge.Type, challenge.Status, challenge.Validated)
+			} else {
+				msg += fmt.Sprintf("Challenge: %d (%s, %s)\n", ndx, challenge.Type, challenge.Status)
+			}
+		}
+		msg += fmt.Sprintf("Valid combinations: %v", auth.Authorization.Combinations)
+		UI.Message(msg)
+
+		if 0 != len(auth.Authorization.Status) {
+			UI.Message("Authorization finished")
+			return
+		}
+
+		sel, err := UI.Prompt("Enter a challenge number to respond to (or r for refresh and empty string to exit)")
 		if nil != err {
 			utils.Fatalf("Failed reading challenge number: %s", err)
 		}
 		if 0 == len(sel) {
 			break
 		}
-		selCh, err := strconv.Atoi(sel)
-		if nil != err {
-			UI.Messagef("Invalid input (%s), try again", err)
-			continue
-		}
-		if selCh < 0 || selCh >= len(auth.Challenges) {
-			UI.Messagef("Not a valid challenge index, try again", err)
-			continue
+		if sel != "r" {
+			selCh, err := strconv.Atoi(sel)
+			if nil != err {
+				UI.Messagef("Invalid input (%s), try again", err)
+				continue
+			}
+			if selCh < 0 || selCh >= len(auth.Authorization.Challenges) {
+				UI.Messagef("Not a valid challenge index, try again", err)
+				continue
+			}
+
+			chResp := auth.Authorization.Respond(selCh)
+			if nil == chResp {
+				UI.Messagef("Responding for challenge %d not supported", selCh)
+				continue
+			}
+
+			if err = chResp.InitializeResponse(UI); nil != err {
+				UI.Messagef("Failed to initialize response: %s", err)
+			}
+
+			if err = chResp.ShowInstructions(UI); nil != err {
+				UI.Messagef("Failed to complete challenge: %s", err)
+				continue
+			}
+			if err = chResp.Verify(); nil != err {
+				UI.Messagef("Failed to verify challenge: %s", err)
+				continue
+			}
+
+			if err = requests.UpdateChallenge(chResp, reg.SigningKey); nil != err {
+				UI.Messagef("Failed to update challenge: %s", err)
+				continue
+			}
 		}
 
-		challenge := &auth.Challenges[selCh]
-		chResp, ok := challenge.Data.(requests.ChallengeResponding)
-		if nil == chResp || !ok {
-			UI.Messagef("Responding for challenge %d not supported", selCh)
-			continue
-		}
-
-		if err = chResp.InitializeResponse(auth, UI); nil != err {
-			UI.Messagef("Failed to initialize response: %s", err)
-		}
-
-		if err = chResp.ShowInstructions(auth, UI); nil != err {
-			UI.Messagef("Failed to complete challenge: %s", err)
-			continue
-		}
-		if err = chResp.Verify(auth); nil != err {
-			UI.Messagef("Failed to verify challenge: %s", err)
-			continue
-		}
-
-		if err = challenge.Update(st.RegistrationKey); nil != err {
-			UI.Messagef("Failed to update challenge: %s", err)
-			continue
-		}
-
-		if err := auth.Refresh(); nil != err {
+		if err := requests.RefreshAuthorization(&auth.Authorization); nil != err {
 			utils.Errorf("Couldn't update authorization: %s", err)
-		}
-		if err = storage.SaveStorageFile(storagePath, st); nil != err {
-			utils.Fatalf("Couldn't save the new authorization: %s", err)
+		} else if err = auth.Save(); nil != err {
+			utils.Fatalf("Couldn't save the updated authorization: %s", err)
 		}
 	}
 }

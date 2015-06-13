@@ -1,18 +1,28 @@
-package requests
+package types
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/stbuehler/go-acme-client/ui"
 	"github.com/stbuehler/go-acme-client/utils"
 )
 
+type DVSNI struct {
+	R     []byte // 32 bytes
+	S     []byte // empty or 32 bytes
+	Nonce string // always 32-character hex string
+}
+
 type rawDVSNI struct {
-	Type  string `json:"type,omitempty"` // only for sending
-	R     string `json:"r,omitempty"`
-	S     string `json:"s,omitempty"`
-	Nonce string `json:"nonce,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Validated string `json:"validated,omitempty"`
+	URI       string `json:"uri,omitempty"`
+	R         string `json:"r,omitempty"`
+	S         string `json:"s,omitempty"`
+	Nonce     string `json:"nonce,omitempty"`
 }
 
 func (dvsni DVSNI) IsValid() bool {
@@ -37,7 +47,7 @@ func (dvsni DVSNI) Check() error {
 	return nil
 }
 
-func (dvsni *DVSNI) Merge(data json.RawMessage) error {
+func (dvsni *DVSNI) merge(data json.RawMessage) error {
 	var raw rawDVSNI
 	err := json.Unmarshal(data, &raw)
 	if nil != err {
@@ -59,19 +69,34 @@ func (dvsni *DVSNI) Merge(data json.RawMessage) error {
 	return nil
 }
 
-func (dvsni *DVSNI) MarshalJSONPartial() (map[string]interface{}, error) {
-	return map[string]interface{}{
-		"r":     utils.Base64UrlEncode(dvsni.R),
-		"s":     utils.Base64UrlEncode(dvsni.S),
-		"nonce": dvsni.Nonce,
-	}, nil
+func (dvsni *DVSNI) marshalJSON(challenge *Challenge) ([]byte, error) {
+	return json.Marshal(rawDVSNI{
+		Type:      challenge.Type,
+		Status:    challenge.Status,
+		Validated: challenge.Validated,
+		URI:       challenge.URI,
+		R:         utils.Base64UrlEncode(dvsni.R),
+		S:         utils.Base64UrlEncode(dvsni.S),
+		Nonce:     dvsni.Nonce,
+	})
 }
 
-func (dvsni *DVSNI) Verify() error {
+func (dvsni *DVSNI) resetResponse() {
+}
+
+func (dvsni *DVSNI) initializeResponse(authorization *Authorization, challenge *Challenge, UI ui.UserInterface) error {
 	return nil
 }
 
-func (dvsni *DVSNI) SendPayload() (interface{}, error) {
+func (dvsni *DVSNI) showInstructions(authorization *Authorization, challenge *Challenge, UI ui.UserInterface) error {
+	return nil
+}
+
+func (dvsni *DVSNI) verify(authorization *Authorization, challenge *Challenge) error {
+	return nil
+}
+
+func (dvsni *DVSNI) sendPayload(authorization *Authorization, challenge *Challenge) (interface{}, error) {
 	if err := dvsni.Check(); nil != err {
 		return nil, err
 	}
@@ -80,8 +105,7 @@ func (dvsni *DVSNI) SendPayload() (interface{}, error) {
 	}
 
 	return rawDVSNI{
-		Type: "dvsni",
-		S:    utils.Base64UrlEncode(dvsni.S),
+		S: utils.Base64UrlEncode(dvsni.S),
 	}, nil
 }
 

@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github.com/stbuehler/go-acme-client/types"
 	"github.com/stbuehler/go-acme-client/utils"
 )
 
-func RequestCertificate(signingKey utils.SigningKey, url string, csr pem.Block, authorizations []string) (*Certificate, error) {
+func RequestCertificate(signingKey types.SigningKey, url string, csr pem.Block, authorizations []string) (*types.Certificate, error) {
 
 	payload := map[string]interface{}{
 		"csr":            utils.Base64UrlEncode(csr.Bytes),
@@ -36,10 +37,11 @@ func RequestCertificate(signingKey utils.SigningKey, url string, csr pem.Block, 
 		return nil, fmt.Errorf("POST certificate request %s to %s failed: %s", string(payloadJson), url, resp.Status)
 	}
 
-	var cert Certificate
-	cert.UrlSelf = resp.Location
+	var cert types.Certificate
+	cert.Location = resp.Location
+	cert.LinkIssuer = resp.Links["up"].URL
 
-	if 0 == len(cert.UrlSelf) {
+	if 0 == len(cert.Location) {
 		return nil, fmt.Errorf("Requesting certificate failed: missing Location")
 	}
 
@@ -47,12 +49,10 @@ func RequestCertificate(signingKey utils.SigningKey, url string, csr pem.Block, 
 		return nil, fmt.Errorf("Unexpected response Content-Type: %s, expected application/pkix-cert", resp.ContentType)
 	}
 
-	cert.File = &pem.Block{
+	cert.PemCertificate = &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: resp.Body,
 	}
-
-	cert.UrlIssuer = resp.Links["up"].URL
 
 	return &cert, nil
 }

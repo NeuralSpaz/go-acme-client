@@ -105,6 +105,6 @@ func (cli) Message(text string) {
 func (cli) Messagef(format string, v ...interface{}) {
 	Messagef(CLI, format, v...)
 }
-func (cli) PasswordPromptOnce(prompt string) func() (string, error) {
+func (cli) PasswordPromptOnce(prompt string) (func() (string, error), func() string) {
 	return PasswordPromptOnce(CLI, prompt)
 }

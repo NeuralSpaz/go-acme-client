@@ -18,28 +18,34 @@ type UserInterface interface {
 
 	// common implementations based on functions above below
 	Messagef(format string, v ...interface{})
-	PasswordPromptOnce(prompt string) func() (string, error)
+	PasswordPromptOnce(prompt string) (func() (string, error), func() string)
 }
 
 func Messagef(UI UserInterface, format string, v ...interface{}) {
 	UI.Message(fmt.Sprintf(format, v...))
 }
 
-func PasswordPromptOnce(UI UserInterface, prompt string) func() (string, error) {
+func PasswordPromptOnce(UI UserInterface, prompt string) (func() (string, error), func() string) {
 	var password *string
 	var err *error
 
 	return func() (string, error) {
-		if nil != password {
-			return *password, nil
-		} else if nil != err {
-			return "", *err
-		} else if p, e := UI.PasswordPrompt(prompt); nil != e {
-			err = &e
-			return "", e
-		} else {
-			password = &p
-			return p, nil
+			if nil != password {
+				return *password, nil
+			} else if nil != err {
+				return "", *err
+			} else if p, e := UI.PasswordPrompt(prompt); nil != e {
+				err = &e
+				return "", e
+			} else {
+				password = &p
+				return p, nil
+			}
+		}, func() string {
+			if nil != password {
+				return *password
+			} else {
+				return ""
+			}
 		}
-	}
 }

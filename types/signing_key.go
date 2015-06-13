@@ -1,4 +1,4 @@
-package utils
+package types
 
 import (
 	"crypto/ecdsa"
@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	jose "github.com/square/go-jose"
+	"github.com/stbuehler/go-acme-client/utils"
 )
 
 type SigningKey struct {
@@ -37,12 +38,12 @@ func (skey SigningKey) GetSignatureAlgorithm() jose.SignatureAlgorithm {
 
 func (skey SigningKey) GetPublicKey() *jose.JsonWebKey {
 	return &jose.JsonWebKey{
-		Key:       MustPublicKey(skey.privateKey),
+		Key:       utils.MustPublicKey(skey.privateKey),
 		Algorithm: string(skey.GetSignatureAlgorithm()),
 	}
 }
 func (skey SigningKey) EncryptPrivateKey(password string, alg x509.PEMCipher) (*pem.Block, error) {
-	return EncryptPrivateKey(skey.privateKey, password, alg)
+	return utils.EncryptPrivateKey(skey.privateKey, password, alg)
 }
 
 func (skey SigningKey) Sign(payload []byte, nonce string) (*jose.JsonWebSignature, error) {
@@ -53,8 +54,8 @@ func (skey SigningKey) Sign(payload []byte, nonce string) (*jose.JsonWebSignatur
 	return signer.Sign(payload, nonce)
 }
 
-func CreateSigningKey(keyType KeyType, curve Curve, rsaBits *int) (SigningKey, error) {
-	pkey, err := CreatePrivateKey(keyType, curve, rsaBits)
+func CreateSigningKey(keyType utils.KeyType, curve utils.Curve, rsaBits *int) (SigningKey, error) {
+	pkey, err := utils.CreatePrivateKey(keyType, curve, rsaBits)
 	if nil != err {
 		return SigningKey{}, err
 	}
@@ -62,7 +63,7 @@ func CreateSigningKey(keyType KeyType, curve Curve, rsaBits *int) (SigningKey, e
 }
 
 func LoadSigningKey(block pem.Block) (SigningKey, error) {
-	privateKey, err := DecodePrivateKey(block)
+	privateKey, err := utils.DecodePrivateKey(block)
 	if nil != err {
 		return SigningKey{}, err
 	}
