@@ -37,53 +37,49 @@ func sendRegistration(url string, signingKey types.SigningKey, payload interface
 	}
 
 	var registration types.Registration
-	err = json.Unmarshal(resp.Body, &registration)
+	err = json.Unmarshal(resp.Body, &registration.Resource)
 	if nil != err {
 		return nil, fmt.Errorf("Failed decoding response from POST %s to %s: %s", string(payloadJson), url, err)
 	}
 
-	registration.Location = resp.Location
-
-	registration.LinkAuth = resp.Links["next"].URL
-	registration.LinkTermsOfService = resp.Links["terms-of-service"].URL
-
-	if nil == old {
-		if 0 == len(registration.Location) {
-			return nil, fmt.Errorf("Missing Location header in registration response")
-		}
-		if 0 == len(registration.LinkAuth) {
-			return nil, fmt.Errorf("Missing Link rel=\"next\" header in registration response")
-		}
+	registration.SigningKey = signingKey
+	if 0 == len(resp.Location) || old.Location == url {
+		registration.Location = old.Location
 	} else {
-		if 0 == len(registration.Location) {
-			registration.Location = old.Location
-		}
-		if 0 == len(registration.LinkAuth) {
-			registration.LinkAuth = old.LinkAuth
-		}
-		if 0 == len(registration.LinkTermsOfService) {
-			registration.LinkTermsOfService = old.LinkTermsOfService
-		}
+		registration.Location = resp.Location
 	}
+	if 0 == len(registration.Location) {
+		return nil, fmt.Errorf("Invalid registration location")
+	}
+	registration.LinkTermsOfService = resp.Links["terms-of-service"].URL
+	// TODO: handle RecoveryToken updates
+	registration.RecoveryToken = old.RecoveryToken
+	registration.Name = old.Name
 
 	return &registration, nil
 }
 
 // should use a unique signing key for each registration!
-func NewRegistration(url string, signingKey types.SigningKey, contact []string) (*types.Registration, error) {
-	reg, err := sendRegistration(url, signingKey, rawRegistration{
+type newRegistration struct {
+	Resource types.ResourceNewRegistrationTag `json:"resource"`
+	Contact  []string                         `json:"contact,omitempty"`
+}
+
+func NewRegistration(directory *types.Directory, signingKey types.SigningKey, contact []string) (*types.Registration, error) {
+	old := types.Registration{} // empty Name
+	reg, err := sendRegistration(directory.Resource.NewRegistration, signingKey, newRegistration{
 		Contact: contact,
-	}, nil)
+	}, &old)
 	if nil != err {
 		return nil, err
 	}
 	return reg, nil
 }
 
-func UpdateRegistration(signingKey types.SigningKey, registration *types.Registration) (*types.Registration, error) {
-	reg, err := sendRegistration(registration.Location, signingKey, rawRegistration{
-		Contact:   registration.Contact,
-		Agreement: registration.Agreement,
+func UpdateRegistration(registration *types.Registration) (*types.Registration, error) {
+	reg, err := sendRegistration(registration.Location, registration.SigningKey, types.RegistrationResource{
+		Contact:      registration.Resource.Contact,
+		AgreementURL: registration.Resource.AgreementURL,
 	}, registration)
 	if nil != err {
 		return nil, err
@@ -91,8 +87,8 @@ func UpdateRegistration(signingKey types.SigningKey, registration *types.Registr
 	return reg, nil
 }
 
-func FetchRegistration(signingKey types.SigningKey, registration *types.Registration) (*types.Registration, error) {
-	reg, err := sendRegistration(registration.Location, signingKey, rawRegistration{}, registration)
+func FetchRegistration(registration *types.Registration) (*types.Registration, error) {
+	reg, err := sendRegistration(registration.Location, registration.SigningKey, types.RegistrationResource{}, registration)
 	if nil != err {
 		return nil, err
 	}

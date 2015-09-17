@@ -8,8 +8,7 @@ import (
 	"github.com/stbuehler/go-acme-client/utils"
 )
 
-func RequestCertificate(signingKey types.SigningKey, url string, csr pem.Block, authorizations []string) (*types.Certificate, error) {
-
+func RequestCertificate(directory *types.Directory, signingKey types.SigningKey, csr pem.Block, authorizations []string) (*types.Certificate, error) {
 	payload := map[string]interface{}{
 		"csr":            utils.Base64UrlEncode(csr.Bytes),
 		"authorizations": authorizations,
@@ -20,6 +19,7 @@ func RequestCertificate(signingKey types.SigningKey, url string, csr pem.Block, 
 		return nil, err
 	}
 
+	url := directory.Resource.NewCertificate
 	req := utils.HttpRequest{
 		Method: "POST",
 		URL:    url,
@@ -49,7 +49,7 @@ func RequestCertificate(signingKey types.SigningKey, url string, csr pem.Block, 
 		return nil, fmt.Errorf("Unexpected response Content-Type: %s, expected application/pkix-cert", resp.ContentType)
 	}
 
-	cert.PemCertificate = &pem.Block{
+	cert.Certificate = &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: resp.Body,
 	}

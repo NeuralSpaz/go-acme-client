@@ -1,12 +1,19 @@
 package types
 
+type RegistrationResource struct {
+	Resource          ResourceRegistrationTag `json:"resource"`
+	Contact           []string                `json:"contact,omitempty"`
+	AgreementURL      string                  `json:"agreement,omitempty"`
+	AuthorizationsURL string                  `json:"authorizations,omitempty"`
+	CertificatesURL   string                  `json:"certificates,omitempty"`
+	// recovery not supported yet
+}
+
 type Registration struct {
-	Location           string   `json:"meta-location,omitempty"`
-	LinkAuth           string   `json:"link-auth,omitempty"`
-	LinkTermsOfService string   `json:"link-tos,omitempty"`
-	Certificates       string   `json:"certificates,omitempty"`
-	Authorizations     string   `json:"authorizations,omitempty"`
-	RecoveryToken      string   `json:"recoveryToken,omitempty"`
-	Contact            []string `json:"contact,omitempty"`
-	Agreement          string   `json:"agreement,omitempty"`
+	Resource           RegistrationResource
+	SigningKey         SigningKey
+	Location           string
+	LinkTermsOfService string
+	RecoveryToken      string
+	Name               string
 }

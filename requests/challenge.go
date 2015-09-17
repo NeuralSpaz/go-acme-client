@@ -7,7 +7,7 @@ import (
 	"github.com/stbuehler/go-acme-client/utils"
 )
 
-func UpdateChallenge(challengeResponse *types.ChallengeResponding, signingKey types.SigningKey) error {
+func UpdateChallenge(challengeResponse types.ChallengeResponding) error {
 	challenge := challengeResponse.Challenge()
 	payload, err := challengeResponse.SendPayload()
 	if nil != err {
@@ -19,22 +19,23 @@ func UpdateChallenge(challengeResponse *types.ChallengeResponding, signingKey ty
 		return err
 	}
 
+	uri := challenge.GetURI()
 	req := utils.HttpRequest{
 		Method: "POST",
-		URL:    challenge.URI,
+		URL:    uri,
 		Headers: utils.HttpRequestHeader{
 			ContentType: "application/json",
 		},
 	}
 
-	resp, err := RunSignedRequest(signingKey, &req, payloadJson)
+	resp, err := RunSignedRequest(challengeResponse.Registration().SigningKey, &req, payloadJson)
 	if nil != err {
-		return fmt.Errorf("POST %s to %s failed: %s", string(payloadJson), challenge.URI, err)
+		return fmt.Errorf("POST %s to %s failed: %s", string(payloadJson), uri, err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("POST %s to %s failed: %s", string(payloadJson), challenge.URI, resp.Status)
+		return fmt.Errorf("POST %s to %s failed: %s", string(payloadJson), uri, resp.Status)
 	}
 
-	return challenge.Merge(json.RawMessage(resp.Body))
+	return nil
 }

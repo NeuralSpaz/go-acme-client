@@ -3,8 +3,7 @@ package command_authorize
 import (
 	"flag"
 	"fmt"
-	"github.com/stbuehler/go-acme-client/requests"
-	"github.com/stbuehler/go-acme-client/storage"
+	"github.com/stbuehler/go-acme-client/command_base"
 	"github.com/stbuehler/go-acme-client/types"
 	"github.com/stbuehler/go-acme-client/ui"
 	"github.com/stbuehler/go-acme-client/utils"
@@ -14,22 +13,22 @@ import (
 var register_flags = flag.NewFlagSet("register", flag.ExitOnError)
 
 func init() {
-	storage.AddStorageFlags(register_flags)
+	command_base.AddStorageFlags(register_flags)
 	utils.AddLogFlags(register_flags)
 }
 
 func Run(UI ui.UserInterface, args []string) {
 	register_flags.Parse(args)
 
-	_, reg := storage.OpenStorageFromFlags(UI)
+	_, _, reg := command_base.OpenStorageFromFlags(UI)
 	if nil == reg {
 		utils.Fatalf("You need to register first")
 	}
 
 	if 1 != len(register_flags.Args()) {
-		auths, err := reg.AuthorizationList()
+		auths, err := reg.AuthorizationInfos()
 		if nil != err {
-			utils.Fatalf("Couldn't retrieve list fo authorizations: %s", err)
+			utils.Fatalf("Couldn't retrieve list of authorizations: %s", err)
 		}
 		msg := "The following authorizations are available:\n"
 		for dnsName, auth := range auths {
@@ -48,47 +47,38 @@ func Run(UI ui.UserInterface, args []string) {
 	}
 	locationOrDnsName := register_flags.Arg(0)
 
-	auth, err := reg.LoadAuthorization(locationOrDnsName)
+	auth, err := reg.LoadAuthorizationByURL(locationOrDnsName)
 	if nil != err {
-		utils.Fatalf("Couldn't lookup authorization %v: %v", locationOrDnsName, err)
-	}
-
-	if nil == auth {
-		newAuth, err := requests.NewDNSAuthorization(reg.Registration.LinkAuth, reg.SigningKey, locationOrDnsName)
-		if nil != err {
-			utils.Fatalf("Couldn't create authorization for %v: %s", locationOrDnsName, err)
-		}
-		auth, err = reg.NewAuthorization(*newAuth)
-		if nil != err {
-			utils.Fatalf("Couldn't save the new authorization for %v: %s", locationOrDnsName, err)
+		utils.Fatalf("Couldn't load authorization %v: %v", locationOrDnsName, err)
+	} else if nil != auth {
+		if err := auth.Refresh(); nil != err {
+			utils.Fatalf("Couldn't refresh authorization %v: %v", locationOrDnsName, err)
 		}
 	} else {
-		if err := requests.RefreshAuthorization(&auth.Authorization); nil != err {
-			utils.Errorf("Couldn't update authorization: %s", err)
-		}
-		if err = auth.Save(); nil != err {
-			utils.Fatalf("Couldn't save the updated authorization: %s", err)
+		if auth, err = reg.AuthorizeDNS(locationOrDnsName); nil != err {
+			utils.Fatalf("Couldn't get authorization for %v: %s", locationOrDnsName, err)
 		}
 	}
 
-	utils.Debugf("Authorization: %#v", auth.Authorization)
-
 	for {
-		msg := fmt.Sprintf("Status: %s\n", auth.Authorization.Status)
-		if string(auth.Authorization.Status) == "valid" {
-			msg += fmt.Sprintf("Expires: %s\n", auth.Authorization.Expires)
+		// refresh every round
+		authData := auth.Authorization()
+
+		msg := fmt.Sprintf("Status: %s\n", authData.Resource.Status)
+		if string(authData.Resource.Status) == "valid" {
+			msg += fmt.Sprintf("Expires: %s\n", authData.Resource.Expires)
 		}
-		for ndx, challenge := range auth.Authorization.Challenges {
-			if 0 != len(challenge.Validated) {
-				msg += fmt.Sprintf("Challenge: %d (%s, %s, validated on %s)\n", ndx, challenge.Type, challenge.Status, challenge.Validated)
+		for ndx, challenge := range authData.Resource.Challenges {
+			if 0 != len(challenge.GetValidated()) {
+				msg += fmt.Sprintf("Challenge: %d (%s, %s, validated on %s)\n", ndx, challenge.GetType(), challenge.GetStatus(), challenge.GetValidated())
 			} else {
-				msg += fmt.Sprintf("Challenge: %d (%s, %s)\n", ndx, challenge.Type, challenge.Status)
+				msg += fmt.Sprintf("Challenge: %d (%s, %s)\n", ndx, challenge.GetType(), challenge.GetStatus())
 			}
 		}
-		msg += fmt.Sprintf("Valid combinations: %v", auth.Authorization.Combinations)
+		msg += fmt.Sprintf("Valid combinations: %v", authData.Resource.Combinations)
 		UI.Message(msg)
 
-		if 0 != len(auth.Authorization.Status) {
+		if 0 != len(authData.Resource.Status) {
 			UI.Message("Authorization finished")
 			return
 		}
@@ -106,12 +96,15 @@ func Run(UI ui.UserInterface, args []string) {
 				UI.Messagef("Invalid input (%s), try again", err)
 				continue
 			}
-			if selCh < 0 || selCh >= len(auth.Authorization.Challenges) {
+			if selCh < 0 || selCh >= len(authData.Resource.Challenges) {
 				UI.Messagef("Not a valid challenge index, try again", err)
 				continue
 			}
 
-			chResp := auth.Authorization.Respond(selCh)
+			chResp, err := authData.Respond(reg.Registration(), selCh)
+			if nil != err {
+				utils.Fatalf("Error trying to create response: %s", err)
+			}
 			if nil == chResp {
 				UI.Messagef("Responding for challenge %d not supported", selCh)
 				continue
@@ -127,19 +120,21 @@ func Run(UI ui.UserInterface, args []string) {
 			}
 			if err = chResp.Verify(); nil != err {
 				UI.Messagef("Failed to verify challenge: %s", err)
+				if err = auth.SaveChallengeData(chResp); nil != err {
+					utils.Fatalf("Couldn't store challenge data: %s", err)
+				}
 				continue
 			}
 
-			if err = requests.UpdateChallenge(chResp, reg.SigningKey); nil != err {
+			// update refreshes auth automatically
+			if err = auth.UpdateChallenge(chResp); nil != err {
 				UI.Messagef("Failed to update challenge: %s", err)
 				continue
 			}
-		}
-
-		if err := requests.RefreshAuthorization(&auth.Authorization); nil != err {
-			utils.Errorf("Couldn't update authorization: %s", err)
-		} else if err = auth.Save(); nil != err {
-			utils.Fatalf("Couldn't save the updated authorization: %s", err)
+		} else {
+			if err := auth.Refresh(); nil != err {
+				utils.Errorf("Couldn't update authorization: %s", err)
+			}
 		}
 	}
 }

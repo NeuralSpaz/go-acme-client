@@ -1,7 +1,8 @@
-package storage
+package storage_sql
 
 import (
 	"flag"
+	i "github.com/stbuehler/go-acme-client/storage_interface"
 	"github.com/stbuehler/go-acme-client/ui"
 	"github.com/stbuehler/go-acme-client/utils"
 )
@@ -14,7 +15,7 @@ func AddStorageFlags(flags *flag.FlagSet) {
 	flags.StringVar(&FlagsStorageAccount, "account", "", "Account name in storage")
 }
 
-func OpenStorageFromFlags(UI ui.UserInterface) (Storage, *StorageRegistration) {
+func OpenStorageFromFlags(UI ui.UserInterface) (i.Storage, i.StorageRegistration) {
 	st, err := OpenSQLite(UI, flagsStoragePath)
 	if nil != err {
 		utils.Fatalf("Couldn't access storage: %s", err)

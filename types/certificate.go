@@ -5,8 +5,8 @@ import (
 )
 
 type Certificate struct {
-	PemCertificate *pem.Block
-	PemPrivateKey  *pem.Block
-	Location       string
-	LinkIssuer     string
+	Certificate *pem.Block
+	PrivateKey  *pem.Block
+	Location    string
+	LinkIssuer  string
 }

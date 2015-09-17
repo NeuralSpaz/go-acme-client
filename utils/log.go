@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	// jose "github.com/square/go-jose"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -103,40 +102,6 @@ func DebugLogHttpRequest(req *HttpRequest, hReq *http.Request) {
 				msg += "\t" + strings.TrimRightFunc(line, unicode.IsSpace) + "\n"
 			}
 			log.Print(msg)
-
-			/*
-				// Parse as JWS
-				parsedJws, err := jose.ParseSigned(string(req.Body))
-				if err != nil {
-					Debugf("Parse error reading JWS: %v", err)
-					return
-				}
-
-				if len(parsedJws.Signatures) > 1 {
-					Debugf("Too many signatures on POST")
-					return
-				}
-				if len(parsedJws.Signatures) == 0 {
-					Debugf("POST not signed: %v", parsedJws)
-					return
-				}
-				key := parsedJws.Signatures[0].Header.JsonWebKey
-				payload, header, err := parsedJws.Verify(key)
-				if err != nil {
-					Debugf("JWS verification error: %v", err)
-					return
-				}
-
-				// Check that the request has a known anti-replay nonce
-				// i.e., Nonce is in protected header and
-				if err != nil || len(header.Nonce) == 0 {
-					Debugf("JWS has no anti-replay nonce")
-					return
-				}
-				Debugf("JWS public key: %s", MustEncodeJson(key))
-				Debugf("JWS payload: %s", payload)
-				Debugf("JWS uses anti-replay nonce: %s", header.Nonce)
-			*/
 		}
 	}
 }
