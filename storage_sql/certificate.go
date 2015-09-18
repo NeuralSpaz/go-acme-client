@@ -30,6 +30,14 @@ func (scert *sqlStorageCertificate) Certificate() *types.Certificate {
 	return &scert.certificate
 }
 
+func (scert *sqlStorageCertificate) SetCertificate(certificate types.Certificate) error {
+	if err := scert.storage.saveCertificate(scert.id, scert.registration.id, certificate); nil != err {
+		return err
+	}
+	scert.certificate = certificate
+	return nil
+}
+
 func (scert *sqlStorageCertificate) Delete() error {
 	if _, err := scert.storage.db.Exec(`DELETE FROM certificate WHERE id = %1`, scert.id); nil != err {
 		return err

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/pem"
 	"fmt"
 	"github.com/stbuehler/go-acme-client/requests"
 	"github.com/stbuehler/go-acme-client/storage_interface"
@@ -16,12 +17,18 @@ type RegistrationModel interface {
 	AuthorizationInfosWithStatus(status types.AuthorizationStatus) (storage_interface.AuthorizationInfos, error)
 	Authorizations() ([]AuthorizationModel, error)
 	LoadAuthorizationByURL(authURL string) (AuthorizationModel, error)
-
 	FetchAllAuthorizations(updateAll bool) error
-	GetAuthorizationByURL(authURL string, refresh bool) (AuthorizationModel, error)
+	ImportAuthorizationByURL(authURL string, refresh bool) (AuthorizationModel, error)
 	GetAuthorizationByDNS(dnsIdentifier string, refresh bool) (AuthorizationModel, error)
 	NewAuthorization(dnsIdentifier string) (AuthorizationModel, error)
 	AuthorizeDNS(dnsIdentifier string) (AuthorizationModel, error)
+
+	CertificateInfos() ([]storage_interface.CertificateInfo, error)
+	Certificates() ([]CertificateModel, error)
+	LoadCertificate(certURL string) (CertificateModel, error)
+	FetchAllCertificates(updateAll bool) error
+	ImportCertificate(certURL string, refresh bool) (CertificateModel, error)
+	NewCertificate(csr pem.Block) (CertificateModel, error)
 }
 
 type registration struct {

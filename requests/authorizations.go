@@ -7,7 +7,7 @@ import (
 )
 
 type authorizationsJSON struct {
-	authorizations []string
+	Authorizations []string `json:"authorizations"`
 }
 
 func FetchAuthorizations(authorizationsURL string) ([]string, error) {
@@ -30,12 +30,12 @@ func FetchAuthorizations(authorizationsURL string) ([]string, error) {
 	}
 
 	response := authorizationsJSON{
-		authorizations: []string{},
+		Authorizations: []string{},
 	}
 	err = json.Unmarshal(resp.Body, &response)
 	if nil != err {
 		return nil, fmt.Errorf("Failed decoding response from GET %s: %s", authorizationsURL, err)
 	}
 
-	return response.authorizations, nil
+	return response.Authorizations, nil
 }

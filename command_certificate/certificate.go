@@ -3,8 +3,7 @@ package command_certificate
 import (
 	"encoding/pem"
 	"flag"
-	"github.com/stbuehler/go-acme-client/requests"
-	"github.com/stbuehler/go-acme-client/storage"
+	"github.com/stbuehler/go-acme-client/command_base"
 	"github.com/stbuehler/go-acme-client/types"
 	"github.com/stbuehler/go-acme-client/ui"
 	"github.com/stbuehler/go-acme-client/utils"
@@ -21,32 +20,28 @@ func init() {
 	register_flags.IntVar(&rsabits, "rsa-bits", 2048, "Number of bits to generate the RSA key with (if selected)")
 	register_flags.Var(&curve, "curve", "Elliptic curve to generate ECDSA key with (if selected), one of P-256, P-384, P-521")
 	register_flags.Var(&keyType, "key-type", "Key type to generate, RSA or ECDSA")
-	storage.AddStorageFlags(register_flags)
+	command_base.AddStorageFlags(register_flags)
 	utils.AddLogFlags(register_flags)
 }
 
 func Run(UI ui.UserInterface, args []string) {
 	register_flags.Parse(args)
 
-	_, reg := storage.OpenStorageFromFlags(UI)
+	_, _, reg := command_base.OpenStorageFromFlags(UI)
 	if nil == reg {
 		utils.Fatalf("You need to register first")
 	}
 
-	listValidAuths, err := reg.AuthorizationListWithStatus(types.AuthorizationStatus("valid"))
+	listValidAuths, err := reg.AuthorizationInfosWithStatus(types.AuthorizationStatus("valid"))
 	if nil != err {
 		utils.Fatalf("Couldn't list valid authorizations: %s", err)
 	}
 
-	validAuths := make(map[string]*types.Authorization)
+	validAuths := make(map[string]bool)
 	var validDomains []string
 
-	for dnsName, authInfo := range listValidAuths {
-		auth, err := reg.LoadAuthorization(authInfo[0].Location)
-		if nil != err {
-			utils.Fatalf("Couldn't load authorization %v: %s", authInfo[0].Location, err)
-		}
-		validAuths[dnsName] = &auth.Authorization
+	for dnsName, _ := range listValidAuths {
+		validAuths[dnsName] = true
 		validDomains = append(validDomains, dnsName)
 	}
 
@@ -75,9 +70,7 @@ func Run(UI ui.UserInterface, args []string) {
 	UI.Messagef("Available domains: %v", validDomains)
 
 	markSelectedDomains := make(map[string]bool)
-	var selectedAuthUrls []string
 	var selectedDomains []string
-	var newCertUrl string
 	for {
 		domain, err := UI.Prompt("Enter domain to add to certificate (empty to end list)")
 		if err != nil {
@@ -91,18 +84,11 @@ func Run(UI ui.UserInterface, args []string) {
 			continue
 		}
 		markSelectedDomains[domain] = true
-		auth := validAuths[domain]
-		if nil == auth {
+		if !validAuths[domain] {
 			UI.Messagef("Unknown domain %#v, not adding - try again", domain)
 			continue
 		}
-		if 0 == len(newCertUrl) {
-			newCertUrl = auth.LinkCert
-		} else if newCertUrl != auth.LinkCert {
-			UI.Messagef("Authentication for %v wants a different certificate URL than the previous domains - adding anyway", domain)
-		}
 		selectedDomains = append(selectedDomains, domain)
-		selectedAuthUrls = append(selectedAuthUrls, auth.Location)
 	}
 
 	if 0 == len(selectedDomains) {
@@ -120,30 +106,24 @@ func Run(UI ui.UserInterface, args []string) {
 
 	utils.Debugf("CSR:\n%s", pem.EncodeToMemory(csr))
 
-	cert, err := requests.RequestCertificate(reg.SigningKey, newCertUrl, *csr, selectedAuthUrls)
+	cert, err := reg.NewCertificate(*csr)
 	if nil != err {
 		utils.Fatalf("Certificate request failed: %s", err)
 	}
 
 	if privateKeyGenerated {
-		if cert.PemPrivateKey, err = utils.EncodePrivateKey(pkey); nil != err {
-			utils.Errorf("Couldn't encode private key: %s", err)
+		if err := cert.SetPrivateKey(pkey); nil != err {
+			utils.Errorf("Couldn't store private key: %s", err)
 		}
-	} else {
-		cert.PemPrivateKey = nil
 	}
+	certData := cert.Certificate()
 
-	_, err = reg.NewCertificate(*cert)
-	if nil != err {
-		utils.Errorf("Couldn't store new certificate: %s", err)
+	UI.Messagef("New certificate is available under: %s (DER encoded)", certData.Location)
+	if 0 != len(certData.LinkIssuer) {
+		UI.Messagef("Issueing certificate available at: %s", certData.LinkIssuer)
 	}
-
-	UI.Messagef("New certificate is available under: %s (DER encoded)", cert.Location)
-	if 0 != len(cert.LinkIssuer) {
-		UI.Messagef("Issueing certificate available at: %s", cert.LinkIssuer)
-	}
-	UI.Messagef("%s", pem.EncodeToMemory(cert.PemCertificate))
-	if nil != cert.PemPrivateKey {
-		UI.Messagef("%s", pem.EncodeToMemory(cert.PemPrivateKey))
+	UI.Messagef("%s", pem.EncodeToMemory(certData.Certificate))
+	if nil != certData.PrivateKey {
+		UI.Messagef("%s", pem.EncodeToMemory(certData.PrivateKey))
 	}
 }

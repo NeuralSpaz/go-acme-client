@@ -5,7 +5,6 @@ import (
 	"github.com/stbuehler/go-acme-client/requests"
 	"github.com/stbuehler/go-acme-client/storage_interface"
 	"github.com/stbuehler/go-acme-client/types"
-	"github.com/stbuehler/go-acme-client/utils"
 )
 
 type AuthorizationModel interface {
@@ -76,7 +75,7 @@ func (auth *authorization) SaveChallengeData(challengeResponse types.ChallengeRe
 	return nil
 }
 
-func (reg *registration) getAuthorization(authURL string, refresh bool) (*authorization, error) {
+func (reg *registration) importAuthorization(authURL string, refresh bool) (*authorization, error) {
 	if auth, err := reg.sreg.LoadAuthorizationByURL(authURL); nil != err {
 		return nil, err
 	} else if nil != auth {
@@ -142,15 +141,20 @@ func (reg *registration) FetchAllAuthorizations(updateAll bool) error {
 	}
 
 	for _, authURL := range authUrls {
-		if _, err := reg.GetAuthorizationByURL(authURL, updateAll); nil != err {
+		if _, err := reg.ImportAuthorizationByURL(authURL, updateAll); nil != err {
 			return err
 		}
 	}
 	return nil
 }
 
-func (reg *registration) GetAuthorizationByURL(authURL string, refresh bool) (AuthorizationModel, error) {
-	return reg.getAuthorization(authURL, refresh)
+func (reg *registration) ImportAuthorizationByURL(authURL string, refresh bool) (AuthorizationModel, error) {
+	if authM, err := reg.importAuthorization(authURL, refresh); nil != err || nil == authM {
+		// make sure to create a nil interface from the nil pointer!
+		return nil, err
+	} else {
+		return authM, nil
+	}
 }
 
 func (reg *registration) GetAuthorizationByDNS(dnsIdentifier string, refresh bool) (AuthorizationModel, error) {

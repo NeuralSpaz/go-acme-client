@@ -29,7 +29,7 @@ func Run(UI ui.UserInterface, args []string) {
 		utils.Fatalf("You need to register first")
 	}
 
-	auth, err := reg.GetAuthorizationByURL(url, true)
+	auth, err := reg.ImportAuthorizationByURL(url, true)
 	if nil != err {
 		utils.Fatalf("Couldn't retrieve authorization: %s", err)
 	}

@@ -8,5 +8,6 @@ type StorageCertificate interface {
 	StorageRegistrationComponent
 
 	Certificate() *types.Certificate
+	SetCertificate(certificate types.Certificate) error
 	Delete() error
 }
