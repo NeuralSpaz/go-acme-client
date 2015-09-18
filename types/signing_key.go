@@ -7,7 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	jose "github.com/square/go-jose"
+	jose "github.com/letsencrypt/go-jose"
 	"github.com/stbuehler/go-acme-client/utils"
 )
 
